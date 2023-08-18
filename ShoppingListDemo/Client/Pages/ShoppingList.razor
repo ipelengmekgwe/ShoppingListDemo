@@ -1,0 +1,146 @@
+﻿@page "/shopping-list"
+@inject IShoppingListService ShoppingListService
+@inject IJSRuntime JsRuntime
+@attribute [Authorize]
+
+<PageTitle>Shopping Lists</PageTitle>
+
+<div class="row mt-4">
+    <div class="col-8">
+        <h4 class="card-title text-info">Your Shopping Lists</h4>
+    </div>
+</div>
+
+<div class="input-group mb-3 mt-4">
+    <input type="text" class="form-control" placeholder="Shopping list name" aria-label="Shopping list name" @bind-value="ShoppingListModel.Name">
+    @if (EditMode)
+    {
+        <button class="btn btn-outline-secondary" type="button" @onclick="() => CancelEdit()">Cancel</button>
+    }
+    <button class="btn btn-outline-secondary" type="button" @onclick="() => UpsertShoppingList()">@ButtonText</button>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th colspan="2">SHOPPING LISTS</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (ShoppingListModels.Any())
+                {
+                    foreach (var shoppingList in ShoppingListModels)
+                    {
+                        <tr>
+                            <td class="shift-col">@shoppingList.Name</td>
+                            <td>
+                                <NavLink href="@($"shopping-list/{shoppingList.Id}/manage-items")" class="btn btn-success">Manage Items</NavLink>
+                                <button class="btn btn-primary" @onclick="() => Edit(JsonSerializer.Serialize(shoppingList))">Edit</button>
+                                <button class="btn btn-danger" @onclick="() => HandleDelete(shoppingList.Id)">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                }
+                else
+                {
+                    <tr>
+                        <td colspan="2">No shopping lists</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<DeleteConfirmation IsParentComponentProcessing="IsProcessing" ConfirmationChanged="ConfirmDelete_Click" />
+
+@code {
+    private IEnumerable<ShoppingListDto> ShoppingListModels { get; set; } = new List<ShoppingListDto>();
+    private ShoppingListDto ShoppingListModel { get; set; } = new();
+    private int ShoppingListId { get; set; } = 0;
+    private string ButtonText { get; set; } = "Add Shopping List";
+    private bool EditMode { get; set; } = false;
+    private bool IsProcessing { get; set; } = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            ShoppingListModels = await ShoppingListService.GetShoppingLists();
+        }
+        catch (AccessTokenNotAvailableException ex)
+        {
+            ex.Redirect();
+        }
+    }
+
+    private void Edit(string json)
+    {
+        var shoppingList = JsonSerializer.Deserialize<ShoppingListDto>(json);
+        ShoppingListId = shoppingList.Id;
+        EditMode = true;
+        ButtonText = "Update";
+        ShoppingListModel = shoppingList;
+    }
+
+    private async Task HandleDelete(int listId)
+    {
+        ShoppingListId = listId;
+        await JsRuntime.InvokeVoidAsync("ShowDeleteConfirmationModal");
+    }
+
+    private async Task UpsertShoppingList()
+    {
+        if (string.IsNullOrWhiteSpace(ShoppingListModel.Name)) return;
+
+        if (!EditMode)
+        {
+            await ShoppingListService.AddShoppingList(ShoppingListModel);
+            ShoppingListModel = new();
+            await JsRuntime.ToastrInfo("Shopping list added");
+        }
+        else
+        {
+            await ShoppingListService.UpdateShoppingList(ShoppingListId, ShoppingListModel);
+            CancelEdit();
+            await JsRuntime.ToastrSuccess("Shopping list updated successfully");
+        }
+
+        ShoppingListModels = await ShoppingListService.GetShoppingLists();
+    }
+
+    private void CancelEdit()
+    {
+        EditMode = false;
+        ButtonText = "Add Shopping List";
+        ShoppingListModel = new();
+    }
+
+    private async Task ConfirmDelete_Click(bool isConfirmed)
+    {
+        IsProcessing = true;
+
+        if (isConfirmed)
+        {
+            await ShoppingListService.DeleteShoppingList(ShoppingListId);
+            await JsRuntime.ToastrSuccess("Shopping list deleted successfully");
+            ShoppingListModels = await ShoppingListService.GetShoppingLists();
+        }
+
+        await JsRuntime.InvokeVoidAsync("HideDeleteConfirmationModal");
+
+        IsProcessing = false;
+    }
+}
+
+<style>
+    .shift-col {
+        width: 70%;
+    }
+
+    td {
+        vertical-align: middle;
+    }
+</style>

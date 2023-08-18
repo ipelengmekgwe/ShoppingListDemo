@@ -1,0 +1,355 @@
+﻿@page "/shopping-list/{Id:int}/manage-items"
+@inject IShoppingListService ShoppingListService
+@inject IShoppingItemService ShoppingItemService
+@inject IJSRuntime JsRuntime
+@attribute [Authorize]
+
+<PageTitle>Shopping Items</PageTitle>
+
+<div class="row mt-2 mb-5">
+    <h3 class="card-title text-info mb-3 ml-3">
+        Shopping Items
+    </h3>
+    <div class="col-md-12">
+        <div class="card">
+            <h5 class="card-header">@ShoppingListModel.Name - Shopping List</h5>
+            <div class="card-body">
+                <h5 class="card-title">Item</h5>
+                <h6 class="card-subtitle mb-3 text-muted">Add an item to your shopping list</h6>
+                <EditForm Model="ShoppingItemModel" OnValidSubmit="HandleShoppingListUpsert">
+                    <DataAnnotationsValidator />
+                    <div class="form-group">
+                        <label for="iname">Name</label>
+                        <InputText id="iname" @bind-Value="ShoppingItemModel.Name" class="form-control" />
+                        <ValidationMessage For="() => ShoppingItemModel.Name" />
+                    </div>
+                    <div class="form-group">
+                        <label for="description">Description</label>
+                        <InputTextArea id="description" @bind-Value="ShoppingItemModel.Description" class="form-control" />
+                        <ValidationMessage For="() => ShoppingItemModel.Description" />
+                    </div>
+                    <div class="form-group">
+                        <label for="rate">Quantity</label>
+                        <InputNumber id="rate" @bind-Value="ShoppingItemModel.Quantity" class="form-control" />
+                        <ValidationMessage For="() => ShoppingItemModel.Quantity" />
+                    </div>
+                    <div class="form-group mt-2">
+                        <InputFile OnChange="HandleImageUpload" multiple accept="image/png, image/jpeg, image/jpg" />
+                        <div class="row">
+                            @if (IsImageUploadProcessStarted)
+                            {
+                                <div class="col-md-12">
+                                    <span>
+                                        <i class="fa fa-spin fa-spinner" />
+                                        Please wait... Images are uploading...
+                                    </span>
+                                </div>
+                            }
+
+                            @if (ShoppingItemModel.ImageFiles != null && ShoppingItemModel.ImageFiles.Any())
+                            {
+                                int serial = 1;
+                                foreach (var imageFile in ShoppingItemModel.ImageFiles)
+                                {
+                                    <div class="col-md-2 mt-3">
+                                        <div class="item-image">
+                                            <img src="data:@imageFile.ContentType;base64,@imageFile.Base64Data" />
+                                            <span class="item-image-title">@serial</span>
+                                        </div>
+                                        <button type="button" @onclick="() => DeleteImage(imageFile)" class="btn btn-outline-danger btn-block mt-4">Delete</button>
+                                    </div>
+                                    serial++;
+                                }
+                            }
+                        </div>
+                    </div>
+                    <div class="form-group mt-2">
+                        <button class="btn btn-primary">@ButtonText</button>
+                        @if (EditMode)
+                        {
+                            <button type="button" class="btn btn-secondary mx-1" @onclick="() => CancelEdit()">Cancel</button>
+                        }
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+        <hr />
+        <div class="col-md-12">
+            <div class="card">
+                <h5 class="card-header">Shopping List Items</h5>
+                <div class="card-body">
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th>ITEM NAME</th>
+                                <th>QTY</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (ShoppingListModel.Items.Any())
+                            {
+                                foreach (var shoppingItem in ShoppingListModel.Items)
+                                {
+                                    <tr>
+                                        <td class="shift-col-1">
+                                            <input type="checkbox" @bind-value="shoppingItem.MarkOff" checked="@shoppingItem.MarkOff" />
+                                        </td>
+                                        <td class="shift-col-2">@shoppingItem.Name</td>
+                                        <td class="shift-col-3">@shoppingItem.Quantity</td>
+                                        <td class="shift-col-4">
+                                            <button class="btn btn-primary" @onclick="() => Edit(JsonSerializer.Serialize(shoppingItem))">Edit</button>
+                                            <button class="btn btn-danger" @onclick="() => HandleDelete(shoppingItem.Id)">Delete</button>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                            else
+                            {
+                                <tr>
+                                    <td colspan="4">No items yet</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    <button type="button" class="btn btn-success" @onclick="() => SaveItems()">Save List</button>
+                </div>
+                <div class="card-footer">
+                    <NavLink href="shopping-list" class="btn btn-secondary">&lt;&lt; Back</NavLink>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<DeleteConfirmation IsParentComponentProcessing="IsProcessing" ConfirmationChanged="ConfirmDelete_Click" />
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private ShoppingListDto ShoppingListModel { get; set; } = new();
+    private ShoppingItemDto ShoppingItemModel { get; set; } = new();
+    private static readonly string[] ValidExtensions = { ".jpg", ".png", ".jpeg" };
+    private List<int> DeleteImages { get; set; } = new();
+    private bool IsImageUploadProcessStarted { get; set; } = false;
+    private bool EditMode { get; set; } = false;
+    private string ButtonText { get; set; } = "Add Item";
+    private bool IsProcessing { get; set; } = false;
+    private int ShoppingItemId { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id.HasValue)
+        {
+            ShoppingListModel = await ShoppingListService.GetShoppingListById(Id.Value);
+        }
+    }
+
+    private async Task HandleShoppingListUpsert()
+    {
+        if (EditMode)
+        {
+            ShoppingListModel.Items.RemoveAll(x => x.Id == ShoppingItemId);
+            ShoppingListModel.Items.Add(ShoppingItemModel);
+
+            await ShoppingListService.UpdateShoppingList(Id.Value, ShoppingListModel);
+
+            if (DeleteImages.Any())
+            {
+                foreach (var id in DeleteImages)
+                {
+                    await ShoppingItemService.DeleteItemImage(id);
+                }
+                DeleteImages = new();
+            }
+
+            await CancelEdit();
+            await JsRuntime.ToastrSuccess("Shopping list updated successfully");
+        }
+        else
+        {
+            ShoppingListModel.Items.Add(ShoppingItemModel);
+            await ShoppingListService.UpdateShoppingList(Id.Value, ShoppingListModel);
+            await JsRuntime.ToastrInfo("Shopping item added");
+        }
+
+        ShoppingItemModel = new();
+    }
+
+    private async Task HandleImageUpload(InputFileChangeEventArgs e)
+    {
+        IsImageUploadProcessStarted = true;
+        try
+        {
+            var imageFiles = new List<ImageFile>();
+            if (e.GetMultipleFiles().Count > 0)
+            {
+                foreach (var file in e.GetMultipleFiles())
+                {
+                    FileInfo fileInfo = new(file.Name);
+
+                    if (ValidExtensions.Contains(fileInfo.Extension.ToLower()))
+                    {
+                        var buffer = new byte[file.Size];
+                        using (var stream = file.OpenReadStream())
+                        {
+                            await stream.ReadAsync(buffer);
+                        }
+
+                        var imageFile = new ImageFile
+                        {
+                            Base64Data = Convert.ToBase64String(buffer),
+                            ContentType = file.ContentType
+                        };
+
+                        imageFiles.Add(imageFile);
+                    }
+                    else
+                    {
+                        await JsRuntime.ToastrWarning("Only .jpg/.jpeg/.png file are allowed");
+                        return;
+                    }
+                }
+
+                if (imageFiles.Any())
+                {
+                    if (ShoppingItemModel.ImageFiles != null && ShoppingItemModel.ImageFiles.Any())
+                    {
+                        ShoppingItemModel.ImageFiles.AddRange(imageFiles);
+                    }
+                    else
+                    {
+                        ShoppingItemModel.ImageFiles = new();
+                        ShoppingItemModel.ImageFiles.AddRange(imageFiles);
+                    }
+                }
+                else
+                {
+                    await JsRuntime.ToastrError("Image uploading failed");
+                    return;
+                }
+            }
+            IsImageUploadProcessStarted = false;
+        }
+        catch (Exception ex)
+        {
+            await JsRuntime.ToastrError(ex.Message);
+            await Task.Delay(5000);
+            IsImageUploadProcessStarted = false;
+        }
+    }
+
+    private void DeleteImage(ImageFile imageFile)
+    {
+        var imageIndex = ShoppingItemModel.ImageFiles.FindIndex(x => x.Base64Data == imageFile.Base64Data);
+        var itemImage = ShoppingItemModel.Images.FirstOrDefault(x => x.Id == imageFile.Id);
+
+        if (EditMode)
+        {
+            DeleteImages.Add(imageFile.Id);
+        }
+
+        ShoppingItemModel.ImageFiles.RemoveAt(imageIndex);
+        ShoppingItemModel.Images.Remove(itemImage);
+    }
+
+    private void Edit(string json)
+    {
+        var shoppingItem = JsonSerializer.Deserialize<ShoppingItemDto>(json);
+        ShoppingItemId = shoppingItem.Id;
+        EditMode = true;
+        ButtonText = "Update";
+        ShoppingItemModel = shoppingItem;
+    }
+
+    private async Task HandleDelete(int id)
+    {
+        ShoppingItemId = id;
+        await JsRuntime.InvokeVoidAsync("ShowDeleteConfirmationModal");
+    }
+
+    private async Task SaveItems()
+    {
+        await ShoppingListService.UpdateShoppingList(Id.Value, ShoppingListModel);
+        ShoppingListModel = await ShoppingListService.GetShoppingListById(Id.Value);
+        await JsRuntime.ToastrSuccess("Shopping list updates successfully");
+    }
+
+    private async Task ConfirmDelete_Click(bool isConfirmed)
+    {
+        IsProcessing = true;
+
+        if (isConfirmed)
+        {
+            await ShoppingItemService.DeleteShoppingItem(ShoppingItemId);
+            await JsRuntime.ToastrSuccess("Shopping item deleted successfully");
+            ShoppingListModel = await ShoppingListService.GetShoppingListById(Id.Value);
+        }
+
+        await JsRuntime.InvokeVoidAsync("HideDeleteConfirmationModal");
+
+        IsProcessing = false;
+    }
+
+    private async Task CancelEdit()
+    {
+        EditMode = false;
+        ButtonText = "Add Item";
+        ShoppingItemModel = new();
+        ShoppingListModel = await ShoppingListService.GetShoppingListById(Id.Value);
+    }
+}
+
+<style>
+    .item-image {
+        display: block;
+        width: 150px;
+        height: 150px;
+        background-size: cover !important;
+        border: 3px solid green;
+        position: relative;
+    }
+
+    .item-image-title {
+        position: absolute;
+        top: 0;
+        right: 0;
+        background-color: green;
+        color: white;
+        padding: 0px 6px;
+        display: inline-block
+    }
+
+    img {
+        object-fit: cover;
+        width: 144px;
+        height: 144px;
+    }
+
+    input[type=checkbox] {
+        transform: scale(1.5);
+    }
+
+    .shift-col-1 {
+        width: 10%;
+        text-align: center;
+    }
+
+    .shift-col-2 {
+        width: 50%;
+    }
+
+    .shift-col-3 {
+        width: 20%;
+    }
+
+    .shift-col-4 {
+        width: 20%;
+    }
+
+    td {
+        vertical-align: middle;
+    }
+</style>
