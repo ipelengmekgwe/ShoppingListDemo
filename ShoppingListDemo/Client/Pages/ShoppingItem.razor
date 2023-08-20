@@ -64,7 +64,7 @@
                         </div>
                     </div>
                     <div class="form-group mt-2">
-                        <button class="btn btn-primary">@ButtonText</button>
+                        <button type="submit" class="btn btn-primary">@ButtonText</button>
                         @if (EditMode)
                         {
                             <button type="button" class="btn btn-secondary mx-1" @onclick="() => CancelEdit()">Cancel</button>
@@ -99,8 +99,8 @@
                                         <td class="shift-col-2">@shoppingItem.Name</td>
                                         <td class="shift-col-3">@shoppingItem.Quantity</td>
                                         <td class="shift-col-4">
-                                            <button class="btn btn-primary" @onclick="() => Edit(JsonSerializer.Serialize(shoppingItem))">Edit</button>
-                                            <button class="btn btn-danger" @onclick="() => HandleDelete(shoppingItem.Id)">Delete</button>
+                                            <button type="button" class="btn btn-primary" @onclick="() => Edit(JsonSerializer.Serialize(shoppingItem))">Edit</button>
+                                            <button type="button" class="btn btn-danger" @onclick="() => HandleDelete(shoppingItem.Id)">Delete</button>
                                         </td>
                                     </tr>
                                 }
@@ -113,7 +113,10 @@
                             }
                         </tbody>
                     </table>
-                    <button type="button" class="btn btn-success" @onclick="() => SaveItems()">Save List</button>
+                    @if (ShoppingListModel.Items.Any())
+                    {
+                        <button type="button" class="btn btn-success" @onclick="() => SaveItems()">Save List</button>
+                    }
                 </div>
                 <div class="card-footer">
                     <NavLink href="shopping-list" class="btn btn-secondary">&lt;&lt; Back</NavLink>
@@ -127,7 +130,7 @@
 
 @code {
     [Parameter]
-    public int? Id { get; set; }
+    public int Id { get; set; }
 
     private ShoppingListDto ShoppingListModel { get; set; } = new();
     private ShoppingItemDto ShoppingItemModel { get; set; } = new();
@@ -141,10 +144,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        if (Id.HasValue)
-        {
-            ShoppingListModel = await ShoppingListService.GetShoppingListById(Id.Value);
-        }
+        ShoppingListModel = await ShoppingListService.GetShoppingListById(Id);
     }
 
     private async Task HandleShoppingListUpsert()
@@ -154,7 +154,7 @@
             ShoppingListModel.Items.RemoveAll(x => x.Id == ShoppingItemId);
             ShoppingListModel.Items.Add(ShoppingItemModel);
 
-            await ShoppingListService.UpdateShoppingList(Id.Value, ShoppingListModel);
+            await ShoppingListService.UpdateShoppingList(Id, ShoppingListModel);
 
             if (DeleteImages.Any())
             {
@@ -171,7 +171,7 @@
         else
         {
             ShoppingListModel.Items.Add(ShoppingItemModel);
-            await ShoppingListService.UpdateShoppingList(Id.Value, ShoppingListModel);
+            await ShoppingListService.UpdateShoppingList(Id, ShoppingListModel);
             await JsRuntime.ToastrInfo("Shopping item added");
         }
 
@@ -244,7 +244,7 @@
     private void DeleteImage(ImageFile imageFile)
     {
         var imageIndex = ShoppingItemModel.ImageFiles.FindIndex(x => x.Base64Data == imageFile.Base64Data);
-        var itemImage = ShoppingItemModel.Images.FirstOrDefault(x => x.Id == imageFile.Id);
+        var itemImage = ShoppingItemModel.Images?.FirstOrDefault(x => x.Id == imageFile.Id);
 
         if (EditMode)
         {
@@ -252,7 +252,7 @@
         }
 
         ShoppingItemModel.ImageFiles.RemoveAt(imageIndex);
-        ShoppingItemModel.Images.Remove(itemImage);
+        ShoppingItemModel.Images?.Remove(itemImage);
     }
 
     private void Edit(string json)
@@ -272,8 +272,9 @@
 
     private async Task SaveItems()
     {
-        await ShoppingListService.UpdateShoppingList(Id.Value, ShoppingListModel);
-        ShoppingListModel = await ShoppingListService.GetShoppingListById(Id.Value);
+        ShoppingListModel.UpdateItemsOnly = true;
+        await ShoppingListService.UpdateShoppingList(Id, ShoppingListModel);
+        ShoppingListModel = await ShoppingListService.GetShoppingListById(Id);
         await JsRuntime.ToastrSuccess("Shopping list updates successfully");
     }
 
@@ -285,7 +286,7 @@
         {
             await ShoppingItemService.DeleteShoppingItem(ShoppingItemId);
             await JsRuntime.ToastrSuccess("Shopping item deleted successfully");
-            ShoppingListModel = await ShoppingListService.GetShoppingListById(Id.Value);
+            ShoppingListModel = await ShoppingListService.GetShoppingListById(Id);
         }
 
         await JsRuntime.InvokeVoidAsync("HideDeleteConfirmationModal");
@@ -298,7 +299,7 @@
         EditMode = false;
         ButtonText = "Add Item";
         ShoppingItemModel = new();
-        ShoppingListModel = await ShoppingListService.GetShoppingListById(Id.Value);
+        ShoppingListModel = await ShoppingListService.GetShoppingListById(Id);
     }
 }
 

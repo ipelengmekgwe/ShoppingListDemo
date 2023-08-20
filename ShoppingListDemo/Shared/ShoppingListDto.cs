@@ -7,5 +7,6 @@ namespace ShoppingListDemo.Shared
         public int Id { get; set; }
         public string Name { get; set; }
         public List<ShoppingItemDto> Items { get; set; } = new();
+        public bool UpdateItemsOnly { get; set; }
     }
 }

@@ -14,7 +14,7 @@ namespace ShoppingListDemo.Server.Mapper
             {
                 images.Add(new ItemImage 
                 {
-                    Id = source.Id,
+                    Id = image.Id,
                     ShoppingItemId = source.ShoppingListId,
                     ContentType = image.ContentType,
                     ImageData = Convert.FromBase64String(image.Base64Data)
